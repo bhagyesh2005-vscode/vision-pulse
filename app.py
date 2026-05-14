@@ -6,7 +6,7 @@ from io import BytesIO
 
 # --- CONFIGURATION ---
 # Yahan apni API Key dalein (Google AI Studio se)
-API_KEY = "YOUR_GEMINI_API_KEY" 
+API_KEY = st.secrets["API_KEY"]
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
