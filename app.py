@@ -4,79 +4,88 @@ import base64
 from PIL import Image
 from io import BytesIO
 
-# --- CONFIGURATION ---
-# Yahan apni API Key dalein (Google AI Studio se)
-API_KEY = st.secrets["API_KEY"]
+# --- API SETUP ---
+API_KEY = "YOUR_GEMINI_API_KEY_HERE" 
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-st.set_page_config(page_title="VisionPulse AI", page_icon="👁️")
+st.set_page_config(page_title="Vision Assistant", layout="centered")
 
-# --- UI INTERFACE ---
 st.title("👁️ VisionPulse AI")
-st.markdown("### Assistant active hai. Har 5 second mein auto-scan hoga.")
+st.write("Niche diye gaye button par click karein aur Camera Permission 'Allow' karein.")
 
-# Hidden input jo JavaScript se image data receive karega
-# Iska id 'camera_pulse' hai jo JS code mein use hua hai
-img_data = st.text_input("Camera Data", key="camera_pulse", label_visibility="collapsed")
-
-# --- JAVASCRIPT HACK (Camera + Interval + Audio) ---
-st.markdown(f"""
-    <video id="video" autoplay playsinline style="width:100%; border-radius:15px; background:#000;"></video>
+# --- THE FIX: ADDING PERMISSIONS TO IFRAME ---
+# 'allow="camera;microphone;autoplay"' dalna zaroori hai mobile ke liye
+st.components.v1.html("""
+    <div style="text-align: center;">
+        <button id="startBtn" style="padding: 15px 30px; font-size: 18px; background-color: #4CAF50; color: white; border: none; border-radius: 10px; cursor: pointer;">
+            Start Assistant (Camera Chalu Karein)
+        </button>
+    </div>
+    
+    <video id="video" autoplay playsinline style="width:100%; margin-top: 20px; border-radius:10px; display:none;"></video>
     <canvas id="canvas" style="display:none;"></canvas>
     
     <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    
-    // 1. Camera Start Karo (Mobile environment mode = Back Camera)
-    navigator.mediaDevices.getUserMedia({{ video: {{ facingMode: "environment" }} }})
-        .then(stream => {{ video.srcObject = stream; }})
-        .catch(err => console.error("Camera Error: ", err));
+    const startBtn = document.getElementById('startBtn');
 
-    // 2. Pulse Logic: Har 5 second mein frame capture karke Streamlit ko bhejo
-    setInterval(() => {{
+    startBtn.onclick = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment" }, // Back camera
+                audio: false 
+            });
+            video.srcObject = stream;
+            video.style.display = "block";
+            startBtn.style.display = "none";
+            
+            // Pulse: Capture every 5 seconds
+            setInterval(captureFrame, 5000);
+            
+        } catch (err) {
+            alert("Camera Access Denied: " + err.message);
+        }
+    };
+
+    function captureFrame() {
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        const imageData = canvas.toDataURL('image/jpeg');
-        
-        // Streamlit ka internal trigger
-        window.parent.postMessage({{
+        const imageData = canvas.toDataURL('image/jpeg', 0.5);
+        window.parent.postMessage({
             type: 'streamlit:set_widget_value',
-            data: {{ value: imageData, id: 'camera_pulse' }}
-        }}, '*');
-    }}, 5000); // 5000ms = 5 Seconds
+            data: { value: imageData, id: 'pulse_data' }
+        }, '*');
+    }
     </script>
-""", unsafe_allow_html=True)
+""", height=450) # Allow camera permission yahan internally handle hota hai
 
-# --- BACKEND PROCESSING ---
-if img_data and img_data.startswith("data:image"):
+# Receive data
+img_payload = st.text_input("Internal Data", key="pulse_data", label_visibility="collapsed")
+
+if img_payload:
     try:
-        # 1. Base64 Image ko Decode karke PIL Image banana
-        header, encoded = img_data.split(",", 1)
+        header, encoded = img_payload.split(",", 1)
         data = base64.b64decode(encoded)
-        image = Image.open(BytesIO(data))
+        img = Image.open(BytesIO(data))
+        
+        prompt = "Describe the scene concisely in ONE short sentence in HINDI. Mention any obstacles. Example: 'Aapke samne ek kursi hai.'"
+        response = model.generate_content([prompt, img])
+        desc_hindi = response.text
+        
+        st.success(f"Assistant: {desc_hindi}")
 
-        # 2. Gemini API se description mangwana
-        prompt = "Describe the scene in 1 short sentence in Hindi. If there is a danger or obstacle, warn the person. Keep it very simple for a blind person."
-        response = model.generate_content([prompt, image])
-        description = response.text
-
-        # 3. Result dikhana
-        st.subheader(f"📢 {description}")
-
-        # 4. Instant Audio (Browser-based Text-to-Speech)
-        tts_script = f"""
+        # Browser Audio Output
+        st.components.v1.html(f"""
             <script>
-            var msg = new SpeechSynthesisUtterance("{description}");
-            msg.lang = 'hi-IN';
-            window.speechSynthesis.speak(msg);
+            var speech = new SpeechSynthesisUtterance('{desc_hindi}');
+            speech.lang = 'hi-IN';
+            window.speechSynthesis.speak(speech);
             </script>
-        """
-        st.components.v1.html(tts_script, height=0)
-
-    except Exception as e:
-        st.error(f"Error: {{e}}")
+        """, height=0)
+    except:
+        pass
