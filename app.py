@@ -67,25 +67,43 @@ st.components.v1.html("""
 # Receive data
 img_payload = st.text_input("Internal Data", key="pulse_data", label_visibility="collapsed")
 
+# --- YAHAN SE NICHE KA PURANA CODE REPLACE KARO ---
 if img_payload:
     try:
-        header, encoded = img_payload.split(",", 1)
+        # 1. Check if data is coming correctly
+        if "," in img_payload:
+            header, encoded = img_payload.split(",", 1)
+        else:
+            encoded = img_payload
+            
         data = base64.b64decode(encoded)
         img = Image.open(BytesIO(data))
         
+        # 2. Gemini API Call
         prompt = "Describe the scene concisely in ONE short sentence in HINDI. Mention any obstacles. Example: 'Aapke samne ek kursi hai.'"
         response = model.generate_content([prompt, img])
-        desc_hindi = response.text
         
-        st.success(f"Assistant: {desc_hindi}")
+        # Agar Gemini ne response diya toh yahan aayega
+        if response and response.text:
+            desc_hindi = response.text
+            st.success(f"Drishti: {desc_hindi}")
 
-        # Browser Audio Output
-        st.components.v1.html(f"""
-            <script>
-            var speech = new SpeechSynthesisUtterance('{desc_hindi}');
-            speech.lang = 'hi-IN';
-            window.speechSynthesis.speak(speech);
-            </script>
-        """, height=0)
-    except:
-        pass
+            # 3. Audio Output (TTS)
+            st.components.v1.html(f"""
+                <script>
+                try {{
+                    var speech = new SpeechSynthesisUtterance('{desc_hindi}');
+                    speech.lang = 'hi-IN';
+                    speech.rate = 1.0;
+                    window.speechSynthesis.speak(speech);
+                }} catch(e) {{
+                    console.error("Audio error: " + e);
+                }}
+                </script>
+            """, height=0)
+        else:
+            st.warning("Gemini API ne koi jawab nahi diya.")
+
+    except Exception as e:
+        # Ye line hume bata degi ki exactly kya fail ho raha hai
+        st.error(f"System Error: {str(e)}")
